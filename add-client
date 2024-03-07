@@ -1,0 +1,61 @@
+#!/bin/bash
+
+# Function to create WireGuard configuration file for the client
+create_wg_conf() {
+    local CLIENT_NAME="$1"
+    local CLIENT_DIR="/etc/wireguard/clients/$CLIENT_NAME"
+    local SERVER_CONF="/etc/wireguard/server.conf"
+
+    # Create directory for client configuration
+    mkdir -p "$CLIENT_DIR"
+
+    local CLIENT_PRIVATE_KEY=$(wg genkey)
+    local CLIENT_PUBLIC_KEY=$(echo "$CLIENT_PRIVATE_KEY" | wg pubkey)
+    local RANDOM_ADDRESS=$(shuf -i 2-254 -n 1)
+
+# Generate a pre-shared key for the client-server handshake
+    local PRESHARED_KEY=$(wg genpsk)
+
+    cat > "$CLIENT_DIR/$CLIENT_NAME.conf" <<EOL
+[Interface]
+#Name = $CLIENT_NAME
+PrivateKey = $CLIENT_PRIVATE_KEY
+Address = 10.20.0.$RANDOM_ADDRESS/24
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = VCTVDrlgmm5NG+tjNL0JEt2X6Gi/bynIhqcaOZ3OgXA=
+PresharedKey = $PRESHARED_KEY
+Endpoint = 52.9.36.31:50000
+AllowedIPs = 0.0.0.0/0,  ::/0
+PersistentKeepalive = 25
+EOL
+
+    # Add client public key and allowed IPs to the server configuration for handshake
+    echo -e "\n[Peer]" >> $SERVER_CONF
+    echo "PublicKey = $CLIENT_PUBLIC_KEY" >> $SERVER_CONF
+    echo "AllowedIPs = 10.20.0.$RANDOM_ADDRESS/32" >> $SERVER_CONF
+    echo "PresharedKey = $PRESHARED_KEY" >> $SERVER_CONF
+    echo "PersistentKeepalive = 25" >> $SERVER_CONF
+
+    # Reload WireGuard to apply changes
+    wg addconf server <(wg-quick strip server)
+}
+
+
+# Function to generate QR code
+generate_qr_code() {
+    local CLIENT_NAME="$1"
+    qrencode -t ansiutf8 < "/etc/wireguard/clients/$CLIENT_NAME/$CLIENT_NAME.conf"
+}
+
+# Main script
+
+# Get client name from user
+read -p "Enter client name: " CLIENT_NAME
+
+# Create WireGuard configuration file for the client and add to server config
+create_wg_conf "$CLIENT_NAME"
+
+# Generate QR code for the client configuration
+generate_qr_code "$CLIENT_NAME"
